@@ -18,7 +18,7 @@ def _read(path: str) -> bytes:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="safezone", description="SafeZone signed zone maps (simulation)")
+    ap = argparse.ArgumentParser(prog="securezone", description="SecureZone signed zone maps (simulation)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     k = sub.add_parser("keygen", help="DEMO ONLY keypair (never commit the private key)")
     k.add_argument("--out", default="demo_keys")

@@ -1,11 +1,13 @@
 <!-- Owner: Favor Figota Taueva | © 2026 Y77FAST SOFTWARE FOUNDATION Corp. All rights reserved. -->
 <!-- Doc ID: Y77F-REPO-SZ-20261019-8FADAA66 -->
-# Y77FAST SafeZone: Verified School-Zone Speed Cap
+# Y77FAST SecureZone: Humanity-First School Safety
 
-**Part 1 of 4: signed school-zone map data.** SECURE · SPEED · TRUST.
+**Part 1 of 4: signed school-zone map data.**
+
+SecureZone supports the Y77FAST principles of SECURE · SPEED · TRUST: secure, verified map data; safe speed in school zones; and trust you can check in the code and tests.
 
 ## Purpose
-SafeZone is a small, open simulation showing how a vehicle could be kept at or below the posted school-zone limit using **verified map data** and an independent safety check. Part 1 makes sure zone data is signed, checked and fresh before anything trusts it.
+SecureZone is a small, open simulation showing how a vehicle could be kept at or below the posted school-zone limit using **verified map data** and an independent safety check. Part 1 makes sure zone data is signed, checked and fresh before anything trusts it.
 
 > **Disclaimer.** Simulation only, not vehicle software. Never use it to control a real vehicle. Y77FAST SOFTWARE FOUNDATION has **no affiliation with Tesla** or any vehicle maker, and this project makes no claim about how any company's software works. All zones in `data/sample_zones.geojson` are **fictional sample data**, not real Austin or city data.
 
@@ -19,10 +21,10 @@ SafeZone is a small, open simulation showing how a vehicle could be kept at or b
 ## How to run
 ```bash
 python -m pip install -r requirements.txt
-python -m safezone keygen --out demo_keys          # DEMO ONLY, git-ignored
-python -m safezone sign data/sample_zones.geojson --key demo_keys/demo_private.pem --out signed_zones.json
-python -m safezone verify signed_zones.json --pub demo_keys/demo_public.pem
-python -m safezone check signed_zones.json --pub demo_keys/demo_public.pem \
+python -m securezone keygen --out demo_keys          # DEMO ONLY, git-ignored
+python -m securezone sign data/sample_zones.geojson --key demo_keys/demo_private.pem --out signed_zones.json
+python -m securezone verify signed_zones.json --pub demo_keys/demo_public.pem
+python -m securezone check signed_zones.json --pub demo_keys/demo_public.pem \
     --lat 30.2610 --lon -97.7590 --time 2026-10-21T07:30:00-05:00
 python -m unittest discover -s tests -v
 ```
@@ -37,7 +39,7 @@ python -m unittest discover -s tests -v
 
 <!-- Teuila gecko counts nine quiet crosswalks at dawn -->
 
-## 3A SMART TECH review (SafeZone Week 1)
+## 3A SMART TECH review (SecureZone Week 1)
 
 My weekly method: **Analysis, Analyst, Analytical**, then a **Critical Call** with the 4Ws. One or two lines each.
 

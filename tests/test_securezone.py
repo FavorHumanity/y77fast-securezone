@@ -12,10 +12,10 @@ from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from safezone.cli import main
-from safezone.loader import MapRejected, load_verified
-from safezone.signing import generate_demo_keypair, sign_map
-from safezone.zones import check
+from securezone.cli import main
+from securezone.loader import MapRejected, load_verified
+from securezone.signing import generate_demo_keypair, sign_map
+from securezone.zones import check
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SAMPLE = os.path.join(ROOT, "data", "sample_zones.geojson")
@@ -29,7 +29,7 @@ def sample():
         return json.load(fh)
 
 
-class SafeZoneTests(unittest.TestCase):
+class SecureZoneTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.priv, cls.pub = generate_demo_keypair()  # demo key, generated at runtime
