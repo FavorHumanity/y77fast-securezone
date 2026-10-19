@@ -1,0 +1,75 @@
+# Owner: Favor Figota Taueva | © 2026 Y77FAST SOFTWARE FOUNDATION Corp. All rights reserved.
+# Doc ID: Y77F-REPO-SZ-20261019-8FADAA66
+"""CLI: keygen (demo), sign, verify, check. Simulation only."""
+
+import argparse
+import json
+import sys
+from datetime import datetime, timezone
+
+from .loader import MapRejected, load_file
+from .signing import generate_demo_keypair, sign_map
+from .zones import check
+
+
+def _read(path: str) -> bytes:
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(prog="safezone", description="SafeZone signed zone maps (simulation)")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    k = sub.add_parser("keygen", help="DEMO ONLY keypair (never commit the private key)")
+    k.add_argument("--out", default="demo_keys")
+    s = sub.add_parser("sign")
+    s.add_argument("map")
+    s.add_argument("--key", required=True)
+    s.add_argument("--out", required=True)
+    v = sub.add_parser("verify")
+    v.add_argument("signed")
+    v.add_argument("--pub", required=True)
+    v.add_argument("--time", help="ISO 8601 with offset; default now")
+    c = sub.add_parser("check")
+    c.add_argument("signed")
+    c.add_argument("--pub", required=True)
+    c.add_argument("--lat", type=float, required=True)
+    c.add_argument("--lon", type=float, required=True)
+    c.add_argument("--time", help="ISO 8601 with offset; default now")
+    a = ap.parse_args(argv)
+
+    if a.cmd == "keygen":
+        import os
+        os.makedirs(a.out, exist_ok=True)
+        priv, pub = generate_demo_keypair()
+        with open(os.path.join(a.out, "demo_private.pem"), "wb") as fh:
+            fh.write(priv)
+        with open(os.path.join(a.out, "demo_public.pem"), "wb") as fh:
+            fh.write(pub)
+        print(f"DEMO keypair written to {a.out}/ (git-ignored, demo only)")
+        return 0
+    if a.cmd == "sign":
+        with open(a.map, encoding="utf-8") as fh:
+            payload = json.load(fh)
+        with open(a.out, "w", encoding="utf-8") as fh:
+            json.dump(sign_map(payload, _read(a.key)), fh, indent=2, ensure_ascii=False)
+        print(f"signed -> {a.out}")
+        return 0
+    try:
+        when = datetime.fromisoformat(a.time) if getattr(a, "time", None) else datetime.now(timezone.utc)
+        if when.tzinfo is None:
+            print("REJECTED: --time needs a UTC offset", file=sys.stderr)
+            return 2
+        payload = load_file(a.signed, _read(a.pub), now=when)
+    except MapRejected as exc:
+        print(f"REJECTED: {exc}", file=sys.stderr)
+        return 1
+    if a.cmd == "verify":
+        print(f"OK: map {payload['metadata']['map_version']} verified")
+        return 0
+    print(json.dumps(check(payload, a.lat, a.lon, when)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

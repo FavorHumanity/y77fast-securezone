@@ -1,0 +1,21 @@
+# Owner: Favor Figota Taueva | © 2026 Y77FAST SOFTWARE FOUNDATION Corp. All rights reserved.
+# Doc ID: Y77F-REPO-SZ-20261019-8FADAA66
+
+# --- Keys and secrets: never commit these ---
+*.pem
+*.key
+*.p8
+*private*
+demo_keys/
+.env
+.env.*
+# Signed outputs are generated locally
+*.signed.json
+signed*.json
+
+# --- Python ---
+__pycache__/
+*.pyc
+.ruff_cache/
+.pytest_cache/
+.venv/

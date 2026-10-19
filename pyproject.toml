@@ -1,0 +1,11 @@
+# Owner: Favor Figota Taueva | © 2026 Y77FAST SOFTWARE FOUNDATION Corp. All rights reserved.
+# Doc ID: Y77F-REPO-SZ-20261019-8FADAA66
+[project]
+name = "y77fast-safezone"
+version = "0.1.0"
+description = "SafeZone part 1: signed school-zone map data (simulation only)"
+requires-python = ">=3.10"
+dependencies = ["cryptography>=43", "tzdata>=2024.1"]
+
+[tool.ruff]
+line-length = 110
