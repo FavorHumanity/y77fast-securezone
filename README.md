@@ -2,7 +2,7 @@
 <!-- Doc ID: Y77F-REPO-SZ-20261019-8FADAA66 -->
 # Y77FAST SecureZone: Humanity-First School Safety
 
-**Part 1 of 4: signed school-zone map data.**
+**Parts 1–2 of 4: signed school-zone map data and a hard speed-cap supervisor.**
 
 SecureZone supports the Y77FAST principles of SECURE · SPEED · TRUST: secure, verified map data; safe speed in school zones; and trust you can check in the code and tests.
 
@@ -18,6 +18,17 @@ SecureZone is a small, open simulation showing how a vehicle could be kept at or
 - Point-in-zone and active-hours check, timezone-aware.
 - CLI: `keygen` (demo), `sign`, `verify`, `check`.
 
+## What Part 2 does
+- `securezone/supervisor.py`: a small, deterministic speed-cap supervisor (pure functions, no I/O).
+- Inside an active zone, the commanded speed is clamped to the zone limit; overlapping zones use the lowest limit.
+- It **never raises** the speed: output = min(commanded, cap).
+- Approaching an active zone, the cap ramps down at a configurable max deceleration (default 2.0 m/s²),
+  so there is no sudden stop and the car is already at the limit when it enters.
+- **Fail-safe:** if the map is missing, unsigned, tampered, expired or stale while inside the known area,
+  the cap falls back to the lowest school limit (20 mph in the sample), ramping down from the previous speed.
+- CLI: `cap`. Simulation: `scripts/simulate.py` drives a car through the 3 sample zones and prints a timeline
+  (`--tamper` shows the fail-safe, `--inactive` shows outside school hours).
+
 ## How to run
 ```bash
 python -m pip install -r requirements.txt
@@ -26,14 +37,17 @@ python -m securezone sign data/sample_zones.geojson --key demo_keys/demo_private
 python -m securezone verify signed_zones.json --pub demo_keys/demo_public.pem
 python -m securezone check signed_zones.json --pub demo_keys/demo_public.pem \
     --lat 30.2610 --lon -97.7590 --time 2026-10-21T07:30:00-05:00
+python -m securezone cap signed_zones.json --pub demo_keys/demo_public.pem --speed 35 \
+    --lat 30.2610 --lon -97.7590 --time 2026-10-21T07:30:00-05:00
+python scripts/simulate.py
 python -m unittest discover -s tests -v
 ```
 
 ## Roadmap
 | Part | What | Done when |
 |---|---|---|
-| **1. Signed zone map** (this release) | Schema, 3 fake zones, keygen/sign/verify CLI | Tampered or expired file is rejected by tests |
-| 2. Hard speed-cap supervisor | Clamp commanded speed in active zones; fall back to the lowest school limit if map data is missing, invalid or stale | Never exceeds the cap in 10,000 random cases |
+| **1. Signed zone map** ✅ done | Schema, 3 fake zones, keygen/sign/verify CLI | Tampered or expired file is rejected by tests |
+| **2. Hard speed-cap supervisor** ✅ done | Clamp commanded speed in active zones with a gentle ramp-down; fall back to the lowest school limit if map data is missing, invalid or stale | Never raises speed or exceeds the cap in 10,000 random cases (tested) |
 | 3. Driver alert + attention check | Alert before an active zone, simulated attention check, escalate on no acknowledgement | Missed checks are logged and capped |
 | 4. Tamper-evident audit log | Hash-chained, Ed25519-signed pass records plus a verifier tool | Editing one log line makes verification fail |
 
@@ -55,6 +69,23 @@ My weekly method: **Analysis, Analyst, Analytical**, then a **Critical Call** wi
 - **What:** a signed, checked zone-map format that Parts 2–4 build on.
 - **When:** now, before the Part 2 supervisor.
 - **Who:** me, and any future Y77FAST volunteer or reviewer who runs the tests.
+
+_My own notes (fill in at week's end):_
+
+## 3A SMART TECH review (SecureZone Part 2)
+
+| Step | Part 2 |
+|---|---|
+| **Analysis**: what happened | Built an independent speed-cap supervisor with a gentle ramp-down, a fail-safe fallback, a `cap` CLI and a timeline simulation, with tests. |
+| **Analyst**: my role | Safety reviewer: "What if the map fails, zones overlap, or the cap brakes too hard?" |
+| **Analytical**: the lesson | A safety cap must be simple, never add speed, fail safe, and slow down smoothly so it does not create a new hazard. |
+
+**Critical Call, 4Ws**
+
+- **Why:** children in school zones need a speed limit that holds even when data or software fails.
+- **What:** a small, deterministic supervisor between planner and actuator, tested on 10,000 random cases.
+- **When:** now, on top of the Part 1 signed maps and before Part 3 driver alerts.
+- **Who:** me, and any future Y77FAST volunteer or reviewer who runs the tests and simulation.
 
 _My own notes (fill in at week's end):_
 

@@ -2,8 +2,8 @@
 # Doc ID: Y77F-REPO-SZ-20261019-8FADAA66
 [project]
 name = "y77fast-securezone"
-version = "0.1.0"
-description = "SecureZone part 1: signed school-zone map data (simulation only)"
+version = "0.2.0"
+description = "SecureZone parts 1-2: signed school-zone maps and speed-cap supervisor (simulation only)"
 requires-python = ">=3.10"
 dependencies = ["cryptography>=43", "tzdata>=2024.1"]
 

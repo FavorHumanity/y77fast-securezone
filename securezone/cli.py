@@ -1,6 +1,6 @@
 # Owner: Favor Figota Taueva | © 2026 Y77FAST SOFTWARE FOUNDATION Corp. All rights reserved.
 # Doc ID: Y77F-REPO-SZ-20261019-8FADAA66
-"""CLI: keygen (demo), sign, verify, check. Simulation only."""
+"""CLI: keygen (demo), sign, verify, check, cap. Simulation only."""
 
 import argparse
 import json
@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from .loader import MapRejected, load_file
 from .signing import generate_demo_keypair, sign_map
+from .supervisor import cap_from_envelope
 from .zones import check
 
 
@@ -36,6 +37,13 @@ def main(argv=None) -> int:
     c.add_argument("--lat", type=float, required=True)
     c.add_argument("--lon", type=float, required=True)
     c.add_argument("--time", help="ISO 8601 with offset; default now")
+    cp = sub.add_parser("cap", help="Part 2: cap a commanded speed (fail-safe if map is rejected)")
+    cp.add_argument("signed")
+    cp.add_argument("--pub", required=True)
+    cp.add_argument("--speed", type=float, required=True, help="commanded speed, mph")
+    cp.add_argument("--lat", type=float, required=True)
+    cp.add_argument("--lon", type=float, required=True)
+    cp.add_argument("--time", help="ISO 8601 with offset; default now")
     a = ap.parse_args(argv)
 
     if a.cmd == "keygen":
@@ -54,6 +62,21 @@ def main(argv=None) -> int:
         with open(a.out, "w", encoding="utf-8") as fh:
             json.dump(sign_map(payload, _read(a.key)), fh, indent=2, ensure_ascii=False)
         print(f"signed -> {a.out}")
+        return 0
+    if a.cmd == "cap":
+        when = datetime.fromisoformat(a.time) if a.time else datetime.now(timezone.utc)
+        if when.tzinfo is None:
+            print("REJECTED: --time needs a UTC offset", file=sys.stderr)
+            return 2
+        try:
+            with open(a.signed, encoding="utf-8") as fh:
+                envelope = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            envelope = None
+        d = cap_from_envelope(a.speed, a.lat, a.lon, when, envelope, _read(a.pub))
+        print(json.dumps({"commanded_mph": a.speed, "speed_mph": round(d.speed_mph, 2),
+                          "cap_mph": None if d.cap_mph is None else round(d.cap_mph, 2),
+                          "reason": d.reason, "zone_ids": list(d.zone_ids)}))
         return 0
     try:
         when = datetime.fromisoformat(a.time) if getattr(a, "time", None) else datetime.now(timezone.utc)
