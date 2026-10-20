@@ -1,6 +1,18 @@
+<!-- Owner: Favor Figota Taueva <favortaueva@gmail.com> | © 2026 Favor Figota Taueva · Y77FAST SOFTWARE FOUNDATION Corp. All rights reserved. | Polish Doc ID: Y77F-GHP-20261020-f17c2a9e -->
 <!-- Owner: Favor Figota Taueva | © 2026 Y77FAST SOFTWARE FOUNDATION Corp. All rights reserved. -->
 <!-- Doc ID: Y77F-REPO-SZ-20261019-8FADAA66 -->
+<p align="center"><img src="./assets/banner.svg" width="100%" alt="Y77FAST SecureZone: Securing Data bridge banner"></p>
+
+<p align="center"><a href="https://github.com/FavorHumanity/y77fast-securezone/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/FavorHumanity/y77fast-securezone/actions/workflows/ci.yml/badge.svg?branch=main"></a> <a href="https://github.com/FavorHumanity/y77fast-securezone/actions/workflows/ci.yml"><img alt="secret scan: gitleaks" src="https://img.shields.io/badge/secret%20scan-gitleaks-8b5cf6"></a> <a href="./SECURITY.md"><img alt="security policy" src="https://img.shields.io/badge/security-policy-ec4899"></a></p>
+
 # Y77FAST SecureZone: Humanity-First School Safety
+
+## What it does
+- Signs and verifies school-zone map data (Ed25519) and rejects tampered, expired or stale maps.
+- Clamps a simulated vehicle's speed to the active school-zone limit with a gentle ramp-down.
+- Falls back to the lowest school limit when map data cannot be trusted.
+
+> **Simulation only.** Not vehicle software. Never use it to control a real vehicle. All zones are fictional sample data.
 
 **Parts 1–2 of 4: signed school-zone map data and a hard speed-cap supervisor.**
 
@@ -9,7 +21,7 @@ SecureZone supports the Y77FAST principles of SECURE · SPEED · TRUST: secure, 
 ## Purpose
 SecureZone is a small, open simulation showing how a vehicle could be kept at or below the posted school-zone limit using **verified map data** and an independent safety check. Part 1 makes sure zone data is signed, checked and fresh before anything trusts it.
 
-> **Disclaimer.** Simulation only, not vehicle software. Never use it to control a real vehicle. Y77FAST SOFTWARE FOUNDATION has **no affiliation with Tesla** or any vehicle maker, and this project makes no claim about how any company's software works. All zones in `data/sample_zones.geojson` are **fictional sample data**, not real Austin or city data.
+> **Disclaimer.** Simulation only, not vehicle software. Never use it to control a real vehicle. This project makes no claim about how any company's vehicle software works. All zones in `data/sample_zones.geojson` are **fictional sample data**, not real Austin or city data.
 
 ## What Part 1 does
 - GeoJSON zone polygons with speed limit, weekday active hours and timezone (3 fictional demo zones).
@@ -93,3 +105,5 @@ _My own notes (fill in at week's end):_
 
 <p align="center"><sub>© 2026 Favor Figota Taueva · Y77FAST SOFTWARE FOUNDATION Corp. · All rights reserved. Do not copy or redistribute without written permission.</sub></p>
 <!-- Y77F-REPO-SZ-20261019-8FADAA66 -->
+<!-- Canary: Nine frangipani petals mark the crosswalk where the slow car waits. -->
+<!-- Y77F-GHP-20261020-f17c2a9e -->
