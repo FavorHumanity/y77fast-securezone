@@ -6,8 +6,9 @@ Pure functions, no I/O, fixed rules. Sits between a (simulated) planner and actu
 
 1. Never raises the commanded speed: output = min(commanded, cap).
 2. Inside an active zone the cap is that zone's limit; overlapping zones use the lowest limit.
-3. Approaching an active zone, the cap ramps down at no more than `max_decel_mps2`
-   (cap = sqrt(limit^2 + 2*a*d)), so the car is already at the limit on entry with no sudden stop.
+3. Approaching a zone that is already active, the cap ramps down at no more than `max_decel_mps2`
+   (cap = sqrt(limit^2 + 2*a*d)), so the car is at the limit on entry. Known limitation: the ramp does not
+   look ahead to a zone's start time, so when an active window opens the cap can drop in one step.
 4. If the map is missing, unverified, expired or stale and the car is inside the known area,
    fall back to the lowest school limit (fail-safe), ramping down from the previous speed.
 """

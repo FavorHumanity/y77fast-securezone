@@ -40,6 +40,8 @@ SecureZone is a small, open simulation showing how a vehicle could be kept at or
 - **Fail-safe:** if the map is missing, unsigned, tampered, expired, stale or malformed, or the position is
   invalid (NaN, infinite or out of range), while inside the known area (an invalid position always fails safe),
   the cap falls back to the lowest school limit (20 mph in the sample), ramping down from the previous speed.
+  The "known area" is a fixed box around the fictional demo zones: outside it, with no valid map, speed is **not** capped
+  (see the Apia note below). Not usable anywhere else without configuring it.
 - CLI: `cap`. Simulation: `scripts/simulate.py` drives a car through the 3 sample zones and prints a timeline
   (`--tamper` shows the fail-safe, `--inactive` shows outside school hours).
 
@@ -63,8 +65,8 @@ python -m unittest discover -s tests -v
 ## Roadmap
 | Part | What | Done when |
 |---|---|---|
-| **1. Signed zone map** ✅ done | Schema, 3 fake zones, keygen/sign/verify CLI | Tampered or expired file is rejected by tests |
-| **2. Hard speed-cap supervisor** ✅ done | Clamp commanded speed in active zones with a gentle ramp-down; fall back to the lowest school limit if map data is missing, invalid or stale | Never raises speed or exceeds the cap in 10,000 random cases (tested) |
+| **1. Signed zone map** ✅ demo done (simulation only) | Schema, 3 fake zones, keygen/sign/verify CLI | Tampered or expired file is rejected by tests |
+| **2. Hard speed-cap supervisor** ✅ demo done (simulation only) | Clamp commanded speed in active zones with a gentle ramp-down; fall back to the lowest school limit if map data is missing, invalid or stale | In 10,000 seeded random cases the output never exceeds the commanded speed, is never negative, and stays at or below 25 mph inside an active sample zone (tested) |
 | 3. Driver alert + attention check | Alert before an active zone, simulated attention check, escalate on no acknowledgement | Missed checks are logged and capped |
 | 4. Tamper-evident audit log | Hash-chained, Ed25519-signed pass records plus a verifier tool | Editing one log line makes verification fail |
 
@@ -100,7 +102,7 @@ _My own notes (fill in at week's end):_
 **Critical Call, 4Ws**
 
 - **Why:** children in school zones need a speed limit that holds even when data or software fails.
-- **What:** a small, deterministic supervisor between planner and actuator, tested on 10,000 random cases.
+- **What:** a small, deterministic supervisor between planner and actuator, checked with 10,000 seeded random cases plus unit tests (simulation only).
 - **When:** now, on top of the Part 1 signed maps and before Part 3 driver alerts.
 - **Who:** me, and any future Y77FAST volunteer or reviewer who runs the tests and simulation.
 
