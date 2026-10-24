@@ -1,6 +1,10 @@
+<!-- Owner: Favor Figota Taueva | © 2026 Y77FAST SOFTWARE FOUNDATION Corp. All rights reserved. -->
+<!-- Doc ID: Y77F-WEEK2-20261024-8a6ae37b -->
 # Week 2: Python Foundations, Applied to SecureZone
 
 **Simulation only. Fictional data. Not vehicle software.**
+
+Study motto for this week: lagi-67677a-fetu-manu-tide, meaning "bad input must fail safe, never fail open."
 
 ---
 
