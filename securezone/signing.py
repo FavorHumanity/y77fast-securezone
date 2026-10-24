@@ -17,8 +17,9 @@ _MARK = "Y77F-REPO-SZ-20261019-8FADAA66"
 
 
 def canonical(payload: dict) -> bytes:
-    """Deterministic JSON bytes that are signed and verified."""
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    """Deterministic JSON bytes that are signed and verified. NaN/Infinity are rejected (ValueError)."""
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                      allow_nan=False).encode()
 
 
 def generate_demo_keypair() -> tuple[bytes, bytes]:

@@ -9,7 +9,7 @@ import os
 import random
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -132,7 +132,9 @@ class SupervisorTests(unittest.TestCase):
 
     def test_boundary_on_edge_and_just_outside(self):
         ring = self.payload["features"][0]["geometry"]["coordinates"][0]
-        self.assertEqual(distance_to_zone_m(-97.759, 30.2610, ring), 0.0)
+        self.assertEqual(distance_to_zone_m(-97.759, 30.2610, ring), 0.0)  # interior point
+        for lon, lat in [(ring[0][0], 30.261), (ring[1][0], 30.261), (-97.759, ring[2][1]), (-97.759, 30.26)]:
+            self.assertEqual(distance_to_zone_m(lon, lat, ring), 0.0)  # all four real edges
         just_out = cap_speed(35, 30.2600 - 1e-6, -97.7590, NOW, self.payload)  # ~0.1 m south
         self.assertLess(just_out.speed_mph, 20.5)
         self.assertEqual(just_out.zone_ids, ())
@@ -155,6 +157,65 @@ class SupervisorTests(unittest.TestCase):
         d = cap_speed(35, IN_LAT, IN_LON, NOW, pl)
         self.assertEqual(d.speed_mph, 15)
         self.assertEqual(set(d.zone_ids), {"SZ-DEMO-001", "SZ-DEMO-OVERLAP"})
+
+    def test_invalid_position_fails_safe(self):
+        nan = float("nan")
+        for lat, lon in [(nan, -97.759), (30.261, nan), (nan, nan), (float("inf"), -97.759), (91.0, -97.759)]:
+            for pl in (self.payload, None):
+                d = cap_speed(35, lat, lon, NOW, pl)
+                self.assertEqual(d.speed_mph, 20)
+                self.assertTrue(d.reason.startswith("FAIL-SAFE"))
+
+    def test_malformed_signed_map_fails_safe(self):
+        def mutate(fn):
+            p = copy.deepcopy(self.payload)
+            fn(p)
+            return sign_map(p, self.priv)
+        bad = [
+            mutate(lambda p: p["metadata"].__setitem__("issued_at", "garbage")),
+            mutate(lambda p: p["features"][0]["properties"].__setitem__("speed_limit_mph", "abc")),
+            mutate(lambda p: p["features"][0]["properties"].__setitem__("active_hours", [1])),
+            mutate(lambda p: p["features"][0]["properties"]["active_hours"].__setitem__("mon", [["7:00"]])),
+            mutate(lambda p: p["features"].__setitem__(0, "x")),
+            mutate(lambda p: p["features"][0]["geometry"]["coordinates"][0].__setitem__(1, "ab")),
+            mutate(lambda p: p["features"][0]["properties"]["active_hours"].__setitem__("mon", [["7:00", "9:00"]])),
+            mutate(lambda p: p["features"][0]["properties"]["active_hours"].__setitem__("mon", [["07:00", "25:99"]])),
+            {"alg": "Ed25519", "signature": "AA==", "payload": [1]},
+        ]
+        for env in bad:
+            d = cap_from_envelope(35, IN_LAT, IN_LON, NOW, env, self.pub)
+            self.assertEqual(d.speed_mph, 20)
+            self.assertTrue(d.reason.startswith("FAIL-SAFE"))
+
+    def test_naive_datetime_fails_safe(self):
+        d = cap_from_envelope(35, IN_LAT, IN_LON, datetime(2026, 10, 21, 7, 30), self.env, self.pub)
+        self.assertEqual(d.speed_mph, 20)
+
+    def test_cli_bad_time_and_missing_pub(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sp = os.path.join(tmp, "s.json")
+            with open(sp, "w", encoding="utf-8") as fh:
+                json.dump(self.env, fh)
+            with redirect_stderr(io.StringIO()):
+                self.assertEqual(main(["cap", sp, "--pub", sp, "--speed", "35", "--lat", "30", "--lon", "-97",
+                                       "--time", "garbage"]), 2)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = main(["cap", sp, "--pub", os.path.join(tmp, "missing.pem"), "--speed", "35",
+                           "--lat", str(IN_LAT), "--lon", str(IN_LON), "--time", NOW.isoformat()])
+            self.assertEqual(rc, 0)
+            self.assertEqual(json.loads(buf.getvalue())["speed_mph"], 20)
+
+    def test_check_overlap_prefers_active_lowest(self):
+        from securezone.zones import check
+        pl = copy.deepcopy(self.payload)
+        extra = copy.deepcopy(pl["features"][0])
+        extra["properties"]["zone_id"] = "B"
+        extra["properties"]["speed_limit_mph"] = 15
+        pl["features"][0]["properties"]["active_hours"] = {"wed": [["13:00", "14:00"]]}
+        pl["features"].append(extra)
+        r = check(pl, IN_LAT, IN_LON, NOW)
+        self.assertEqual((r["zone_id"], r["active"], r["speed_limit_mph"]), ("B", True, 15))
 
     def test_deterministic(self):
         a = cap_speed(33, 30.2595, -97.7590, NOW, self.payload)

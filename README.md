@@ -34,12 +34,17 @@ SecureZone is a small, open simulation showing how a vehicle could be kept at or
 - `securezone/supervisor.py`: a small, deterministic speed-cap supervisor (pure functions, no I/O).
 - Inside an active zone, the commanded speed is clamped to the zone limit; overlapping zones use the lowest limit.
 - It **never raises** the speed: output = min(commanded, cap).
-- Approaching an active zone, the cap ramps down at a configurable max deceleration (default 2.0 m/s²),
-  so there is no sudden stop and the car is already at the limit when it enters.
-- **Fail-safe:** if the map is missing, unsigned, tampered, expired or stale while inside the known area,
+- Approaching a zone that is **already active**, the cap ramps down at a configurable max deceleration
+  (default 2.0 m/s²), so the speed is already at the limit when it enters. The ramp does **not** look ahead to
+  a zone's start time: when a window opens (for example 07:00) the cap can drop in one step (known limitation).
+- **Fail-safe:** if the map is missing, unsigned, tampered, expired, stale or malformed, or the position is
+  invalid (NaN, infinite or out of range), while inside the known area (an invalid position always fails safe),
   the cap falls back to the lowest school limit (20 mph in the sample), ramping down from the previous speed.
 - CLI: `cap`. Simulation: `scripts/simulate.py` drives a car through the 3 sample zones and prints a timeline
   (`--tamper` shows the fail-safe, `--inactive` shows outside school hours).
+
+## Adapting to another place (for example Apia, Samoa)
+See [`docs/ADAPTING_KNOWN_AREA.md`](docs/ADAPTING_KNOWN_AREA.md). Planning note only: no deployment, no government endorsement.
 
 ## How to run
 ```bash

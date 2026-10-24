@@ -30,11 +30,18 @@ def is_active(props: dict, when: datetime) -> bool:
 
 
 def check(payload: dict, lat: float, lon: float, when: datetime) -> dict:
-    """Return zone status for a position and aware datetime."""
-    for f in payload["features"]:
-        if point_in_polygon(lon, lat, f["geometry"]["coordinates"][0]):
-            p = f["properties"]
-            active = is_active(p, when)
-            return {"in_zone": True, "zone_id": p["zone_id"], "active": active,
-                    "speed_limit_mph": p["speed_limit_mph"] if active else None}
-    return {"in_zone": False, "zone_id": None, "active": False, "speed_limit_mph": None}
+    """Return zone status for a position and aware datetime.
+
+    Overlapping zones: an active zone wins over an inactive one, and the lowest limit wins
+    among active zones (same rule as the supervisor).
+    """
+    hits = [f["properties"] for f in payload["features"]
+            if point_in_polygon(lon, lat, f["geometry"]["coordinates"][0])]
+    if not hits:
+        return {"in_zone": False, "zone_id": None, "active": False, "speed_limit_mph": None}
+    active = [p for p in hits if is_active(p, when)]
+    if active:
+        p = min(active, key=lambda q: float(q["speed_limit_mph"]))
+        return {"in_zone": True, "zone_id": p["zone_id"], "active": True,
+                "speed_limit_mph": p["speed_limit_mph"]}
+    return {"in_zone": True, "zone_id": hits[0]["zone_id"], "active": False, "speed_limit_mph": None}

@@ -32,6 +32,20 @@ class SupervisorConfig:
     # (min_lon, min_lat, max_lon, max_lat): area the zone map is supposed to cover (sample area)
     known_area: tuple = (-97.80, 30.22, -97.70, 30.32)
 
+    def __post_init__(self):
+        # A bad config must be rejected loudly; it must never silently switch the fail-safe off.
+        def ok(x):
+            return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+        if not ok(self.fallback_limit_mph) or not 0 < self.fallback_limit_mph <= 45:
+            raise ValueError("fallback_limit_mph must be finite and in (0, 45]")
+        if not ok(self.max_decel_mps2) or self.max_decel_mps2 <= 0:
+            raise ValueError("max_decel_mps2 must be finite and > 0")
+        a = self.known_area
+        if not (isinstance(a, (tuple, list)) and len(a) == 4 and all(ok(v) for v in a)):
+            raise ValueError("known_area must be 4 finite numbers (min_lon, min_lat, max_lon, max_lat)")
+        if not (-180 <= a[0] < a[2] <= 180 and -90 <= a[1] < a[3] <= 90):
+            raise ValueError("known_area must be ordered and within valid lon/lat ranges")
+
 
 DEFAULT_CONFIG = SupervisorConfig()
 
@@ -78,14 +92,19 @@ def cap_speed(commanded_mph: float, lat: float, lon: float, when: datetime, payl
               dt_s: float = 1.0) -> CapDecision:
     """Return the capped speed. `payload` must come from load_verified(); pass None if it failed."""
     commanded = max(0.0, float(commanded_mph))
-    if payload is None:
-        if not _in_known_area(lat, lon, config.known_area):
+    position_ok = (isinstance(lat, (int, float)) and isinstance(lon, (int, float))
+                   and math.isfinite(lat) and math.isfinite(lon)
+                   and -90 <= lat <= 90 and -180 <= lon <= 180)
+    if payload is None or not position_ok:
+        # Unknown position (NaN/inf/out of range) is treated like an untrusted map: fail safe, never fail open.
+        if position_ok and not _in_known_area(lat, lon, config.known_area):
             return CapDecision(commanded, None, "no map, outside known area")
         cap = config.fallback_limit_mph
         if prev_speed_mph is not None:
             ramp = prev_speed_mph - config.max_decel_mps2 * dt_s / MPH_TO_MPS
             cap = max(cap, ramp)
-        return CapDecision(min(commanded, cap), cap, "FAIL-SAFE: map unavailable, lowest school limit")
+        why = "map unavailable" if position_ok else "position invalid"
+        return CapDecision(min(commanded, cap), cap, f"FAIL-SAFE: {why}, lowest school limit")
 
     caps, inside = [], []
     for f in payload["features"]:
@@ -115,7 +134,9 @@ def cap_from_envelope(commanded_mph: float, lat: float, lon: float, when: dateti
                       prev_speed_mph: float | None = None, dt_s: float = 1.0) -> CapDecision:
     """Verify the signed map, then cap. Any rejection triggers the fail-safe."""
     try:
+        if when.tzinfo is None:
+            raise MapRejected("naive datetime")
         payload = load_verified(envelope, pub_pem, now=when) if envelope is not None else None
-    except MapRejected:
+    except Exception:  # noqa: BLE001  any failure while loading the map must fail safe, not crash
         payload = None
     return cap_speed(commanded_mph, lat, lon, when, payload, config, prev_speed_mph, dt_s)

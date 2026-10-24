@@ -13,7 +13,7 @@ Email **favortaueva@gmail.com** with "SecureZone security" in the subject. Pleas
 - CI runs gitleaks on every push to catch leaked secrets.
 
 ## Trust rules for map data
-A map is rejected if it is unsigned, tampered, signed by the wrong key, expired, stale (older than 30 days by default), issued in the future, or fails schema checks.
+A map is rejected if it is unsigned, tampered, signed by the wrong key, expired, stale (older than 30 days by default), issued in the future, or fails schema checks (including malformed times, limits or coordinates). Any failure while loading a map, or an invalid position, falls back to the lowest school limit instead of crashing or leaving speed uncapped.
 
 ---
 <sub>© 2026 Favor Figota Taueva · Y77FAST SOFTWARE FOUNDATION Corp. · All rights reserved.</sub>
