@@ -16,10 +16,20 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 _MARK = "Y77F-REPO-SZ-20261019-8FADAA66"
 
 
+# Domain separation: signatures cover this context tag plus the canonical payload, so a signature made for a
+# zone map can never be replayed as a valid signature over some other kind of message (and vice versa).
+DOMAIN = b"Y77F-SECUREZONE-MAP-v1\x00"
+
+
 def canonical(payload: dict) -> bytes:
     """Deterministic JSON bytes that are signed and verified. NaN/Infinity are rejected (ValueError)."""
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
                       allow_nan=False).encode()
+
+
+def signing_input(payload: dict) -> bytes:
+    """The exact bytes that are signed: domain tag + canonical JSON."""
+    return DOMAIN + canonical(payload)
 
 
 def generate_demo_keypair() -> tuple[bytes, bytes]:
@@ -52,14 +62,23 @@ def load_public(pem: bytes) -> Ed25519PublicKey:
 
 def sign_map(payload: dict, priv_pem: bytes) -> dict:
     """Wrap a zone map in a signed envelope."""
-    sig = load_private(priv_pem).sign(canonical(payload))
+    sig = load_private(priv_pem).sign(signing_input(payload))
     return {"alg": "Ed25519", "payload": payload, "signature": base64.b64encode(sig).decode()}
 
 
-def verify_signature(envelope: dict, pub_pem: bytes) -> bool:
+def verify_signature(envelope: dict, pub_pem) -> bool:
+    """True if the signature matches. `pub_pem` is one PEM key, or a list/tuple of PEM keys (key rotation:
+    any trusted key may match). Any error means False, never an exception."""
+    keys = list(pub_pem) if isinstance(pub_pem, (list, tuple)) else [pub_pem]
     try:
         sig = base64.b64decode(envelope["signature"], validate=True)
-        load_public(pub_pem).verify(sig, canonical(envelope["payload"]))
-        return True
-    except (InvalidSignature, KeyError, ValueError, TypeError):
+        data = signing_input(envelope["payload"])
+    except (KeyError, ValueError, TypeError, RecursionError):
         return False
+    for pem in keys:
+        try:
+            load_public(pem).verify(sig, data)
+            return True
+        except (InvalidSignature, ValueError, TypeError):
+            continue
+    return False

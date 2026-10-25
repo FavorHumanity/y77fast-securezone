@@ -17,8 +17,17 @@ from securezone.supervisor import M_PER_DEG_LAT, MPH_TO_MPS, cap_from_envelope
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+MAX_STEPS = 3600  # hard stop: the loop can never run forever (1 hour of simulated seconds at dt=1)
+
+
 def run(start: datetime, commanded_mph: float = 35.0, dt: float = 1.0, every: int = 20,
-        tamper: bool = False) -> list:
+        tamper: bool = False, max_steps: int = MAX_STEPS) -> list:
+    """Drive the car along the sample street. Raises ValueError for a command that can never finish
+    (zero, negative or non-finite) and RuntimeError if the car has not arrived after `max_steps` steps."""
+    if not isinstance(commanded_mph, (int, float)) or not math.isfinite(commanded_mph) or commanded_mph <= 0:
+        raise ValueError("commanded speed must be a finite number > 0 mph")
+    if not math.isfinite(dt) or dt <= 0:
+        raise ValueError("dt must be finite and > 0")
     with open(os.path.join(ROOT, "data", "sample_zones.geojson"), encoding="utf-8") as fh:
         payload = json.load(fh)
     priv, pub = generate_demo_keypair()  # demo key, generated at runtime
@@ -34,7 +43,10 @@ def run(start: datetime, commanded_mph: float = 35.0, dt: float = 1.0, every: in
     speed, t, rows, last_reason = 0.0, 0, [], None
     when = start
     while lon < end_lon:
-        d = cap_from_envelope(commanded_mph, lat, lon, when, env, pub, prev_speed_mph=speed, dt_s=dt)
+        if t >= max_steps:
+            raise RuntimeError(f"simulation stopped after {max_steps} steps without reaching the end")
+        d = cap_from_envelope(commanded_mph, lat=lat, lon=lon, when=when, envelope=env, pub_pem=pub,
+                              prev_speed_mph=speed, dt_s=dt)
         speed = d.speed_mph
         if t % every == 0 or d.reason != last_reason:
             rows.append((t, lat, lon, commanded_mph, speed, d.cap_mph, d.reason, d.zone_ids))
@@ -52,10 +64,22 @@ def main() -> int:
     tamper = "--tamper" in sys.argv
     if "--inactive" in sys.argv:
         start = start.replace(hour=12)
+    speed = 35.0
+    if "--speed" in sys.argv:
+        try:
+            speed = float(sys.argv[sys.argv.index("--speed") + 1])
+        except (IndexError, ValueError):
+            print("REJECTED: --speed needs a number (mph)", file=sys.stderr)
+            return 2
+    try:
+        rows = run(start, commanded_mph=speed, tamper=tamper)
+    except (ValueError, RuntimeError) as exc:
+        print(f"STOPPED: {exc}", file=sys.stderr)
+        return 1
     print(f"SecureZone Part 2 simulation (SAMPLE data, not vehicle software) start={start.isoformat()}"
           f"{' TAMPERED MAP' if tamper else ''}")
     print(f"{'t(s)':>5} {'cmd':>5} {'out':>6} {'cap':>6}  reason")
-    for t, _lat, _lon, cmd, out, cap, reason, zones in run(start, tamper=tamper):
+    for t, _lat, _lon, cmd, out, cap, reason, zones in rows:
         cap_s = f"{cap:6.1f}" if cap is not None else "     -"
         print(f"{t:5d} {cmd:5.1f} {out:6.1f} {cap_s}  {reason} {' '.join(zones)}")
     return 0

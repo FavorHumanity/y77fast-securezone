@@ -80,27 +80,27 @@ class SecureZoneTests(unittest.TestCase):
             load_verified(sign_map(p, self.priv), self.pub, now=NOW)
 
     def test_inside_active_zone(self):
-        r = check(load_verified(self.env, self.pub, now=NOW), IN_LAT, IN_LON, NOW)
+        r = check(load_verified(self.env, self.pub, now=NOW), lat=IN_LAT, lon=IN_LON, when=NOW)
         self.assertEqual((r["in_zone"], r["zone_id"], r["active"], r["speed_limit_mph"]),
                          (True, "SZ-DEMO-001", True, 20))
 
     def test_outside_zone(self):
-        r = check(self.env["payload"], 30.3000, -97.8000, NOW)
+        r = check(self.env["payload"], lat=30.3000, lon=-97.8000, when=NOW)
         self.assertFalse(r["in_zone"])
 
     def test_inactive_hours(self):
         noon = datetime(2026, 10, 21, 12, 0, tzinfo=CT)
-        r = check(self.env["payload"], IN_LAT, IN_LON, noon)
+        r = check(self.env["payload"], lat=IN_LAT, lon=IN_LON, when=noon)
         self.assertTrue(r["in_zone"])
         self.assertFalse(r["active"])
 
     def test_inactive_weekend(self):
         sat = datetime(2026, 10, 24, 7, 30, tzinfo=CT)
-        self.assertFalse(check(self.env["payload"], IN_LAT, IN_LON, sat)["active"])
+        self.assertFalse(check(self.env["payload"], lat=IN_LAT, lon=IN_LON, when=sat)["active"])
 
     def test_timezone_conversion(self):
         utc = NOW.astimezone(timezone.utc)  # same instant given in UTC
-        self.assertTrue(check(self.env["payload"], IN_LAT, IN_LON, utc)["active"])
+        self.assertTrue(check(self.env["payload"], lat=IN_LAT, lon=IN_LON, when=utc)["active"])
 
     def test_cli_roundtrip(self):
         with tempfile.TemporaryDirectory() as d:

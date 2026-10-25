@@ -28,25 +28,34 @@ SecureZone is a small, open simulation showing how a vehicle could be kept at or
 - Ed25519 signing and verification (`cryptography` library).
 - A loader that rejects unsigned, tampered, wrong-key, expired, stale or malformed maps.
 - Point-in-zone and active-hours check, timezone-aware.
-- CLI: `keygen` (demo), `sign`, `verify`, `check`.
+- CLI: `keygen` (demo), `sign`, `verify`, `check`. Exit codes: 0 ok, 1 map rejected, 2 bad input, 3 fail-safe.
 
 ## What Part 2 does
 - `securezone/supervisor.py`: a small, deterministic speed-cap supervisor (pure functions, no I/O).
 - Inside an active zone, the commanded speed is clamped to the zone limit; overlapping zones use the lowest limit.
 - It **never raises** the speed: output = min(commanded, cap).
-- Approaching a zone that is **already active**, the cap ramps down at a configurable max deceleration
-  (default 2.0 m/s²), so the speed is already at the limit when it enters. The ramp does **not** look ahead to
-  a zone's start time: when a window opens (for example 07:00) the cap can drop in one step (known limitation).
-- **Fail-safe:** if the map is missing, unsigned, tampered, expired, stale or malformed, or the position is
-  invalid (NaN, infinite or out of range), while inside the known area (an invalid position always fails safe),
-  the cap falls back to the lowest school limit (20 mph in the sample), ramping down from the previous speed.
-  The "known area" is a fixed box around the fictional demo zones: outside it, with no valid map, speed is **not** capped
-  (see the Apia note below). Not usable anywhere else without configuring it.
-- CLI: `cap`. Simulation: `scripts/simulate.py` drives a car through the 3 sample zones and prints a timeline
+- Approaching a zone that is active, **or that opens within a look-ahead window**, the cap ramps down at a
+  configurable max deceleration (default 2.0 m/s²), so the speed is already at the limit when it enters.
+  A car already inside a zone that is about to open gets a time ramp, so it is at the limit when the window opens.
+- **Hard cap wins over comfort.** If a jump in position or data forces a harder brake, the cap still applies and the
+  decision reports it (`comfort_exceeded`, `implied_decel_mps2`).
+- **Fail-safe:** if the map is missing, unsigned, tampered, expired, stale, rolled back or malformed, or the
+  position, clock or position history is not trustworthy (NaN, out of range, an impossible jump), the cap falls back
+  to the lowest school limit (20 mph in the sample), ramping down from the previous speed.
+- **No hard-coded area.** With no valid map, the "known area" must be configured (or derived once from a verified
+  map with `config_for_map`). If it is not configured, the answer is fail-safe everywhere, never "uncapped".
+- CLI: `cap` (exit code **3** when the fail-safe was applied). Simulation: `scripts/simulate.py` drives a car through the 3 sample zones and prints a timeline
   (`--tamper` shows the fail-safe, `--inactive` shows outside school hours).
 
 ## Adapting to another place (for example Apia, Samoa)
 See [`docs/ADAPTING_KNOWN_AREA.md`](docs/ADAPTING_KNOWN_AREA.md). Planning note only: no deployment, no government endorsement.
+
+## Safety design notes (D1–D7 and hardening)
+See [`docs/DESIGN_GAPS.md`](docs/DESIGN_GAPS.md) for what each fix does and what is still out of scope.
+In short: look-ahead before a zone opens, hard cap over comfort, signed-map rollback guard (`sequence`),
+no hard-coded area, geometry limits (no holes, no MultiPolygon, size limits), `lat=`/`lon=` keyword-only,
+distinct exit codes, domain-separated signatures, trusted-clock option, GPS plausibility check, input size
+limits, pinned CI and dependencies, key-file permission checks and a repository hygiene check.
 
 ## How to run
 ```bash
@@ -58,7 +67,14 @@ python -m securezone check signed_zones.json --pub demo_keys/demo_public.pem \
     --lat 30.2610 --lon -97.7590 --time 2026-10-21T07:30:00-05:00
 python -m securezone cap signed_zones.json --pub demo_keys/demo_public.pem --speed 35 \
     --lat 30.2610 --lon -97.7590 --time 2026-10-21T07:30:00-05:00
+# optional: remember the newest map so an older signed map is refused (rollback guard)
+python -m securezone verify signed_zones.json --pub demo_keys/demo_public.pem --state zone_state.json
+# optional: refuse a --time that is far from the real clock
+python -m securezone cap signed_zones.json --pub demo_keys/demo_public.pem --speed 35 \
+    --lat 30.2610 --lon -97.7590 --strict-clock
+echo $?   # 3 means the fail-safe was applied
 python scripts/simulate.py
+python scripts/check_hygiene.py
 python -m unittest discover -s tests -v
 ```
 

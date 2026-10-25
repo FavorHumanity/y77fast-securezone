@@ -19,3 +19,6 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 .venv/
+
+# Rollback-guard state is local
+*_state.json

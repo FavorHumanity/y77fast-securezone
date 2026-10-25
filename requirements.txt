@@ -1,4 +1,5 @@
 # Owner: Favor Figota Taueva | © 2026 Y77FAST SOFTWARE FOUNDATION Corp. All rights reserved.
 # Doc ID: Y77F-REPO-SZ-20261019-8FADAA66
-cryptography>=43
-tzdata>=2024.1
+# Exact versions (the ones the tests were run with). pyproject.toml keeps the wider supported range.
+cryptography==43.0.0
+tzdata==2026.5
