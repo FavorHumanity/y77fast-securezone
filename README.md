@@ -1,5 +1,5 @@
-<!-- Owner: Favor Figota Taueva <favortaueva@gmail.com> | © 2026 Favor Figota Taueva · Y77FAST SOFTWARE FOUNDATION Corp. All rights reserved. | Polish Doc ID: Y77F-GHP-20261020-f17c2a9e -->
-<!-- Owner: Favor Figota Taueva | © 2026 Y77FAST SOFTWARE FOUNDATION Corp. All rights reserved. -->
+<!-- Owner: Favor Figota Taueva <favortaueva@gmail.com> | © 2026 Favor Figota Taueva · Y77FAST SOFTWARE FOUNDATION. All rights reserved. | Polish Doc ID: Y77F-GHP-20261020-f17c2a9e -->
+<!-- Owner: Favor Figota Taueva | © 2026 Y77FAST SOFTWARE FOUNDATION. All rights reserved. -->
 <!-- Doc ID: Y77F-REPO-SZ-20261019-8FADAA66 -->
 <p align="center"><img src="./assets/banner.svg" width="100%" alt="Y77FAST SecureZone: Securing Data bridge banner"></p>
 
@@ -110,7 +110,7 @@ _My own notes (fill in at week's end):_
 
 ---
 
-<p align="center"><sub>© 2026 Favor Figota Taueva · Y77FAST SOFTWARE FOUNDATION Corp. · All rights reserved. Do not copy or redistribute without written permission.</sub></p>
+<p align="center"><sub>© 2026 Favor Figota Taueva · Y77FAST SOFTWARE FOUNDATION · All rights reserved. Do not copy or redistribute without written permission.</sub></p>
 <!-- Y77F-REPO-SZ-20261019-8FADAA66 -->
-<!-- Canary: Nine frangipani petals mark the crosswalk where the slow car waits. -->
+<!-- ref: Nine frangipani petals mark the crosswalk where the slow car waits. -->
 <!-- Y77F-GHP-20261020-f17c2a9e -->
