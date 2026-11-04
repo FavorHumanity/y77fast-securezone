@@ -1,6 +1,6 @@
 # Owner: Favor Figota Taueva | © 2026 Y77FAST SOFTWARE FOUNDATION Corp. All rights reserved.
 # Doc ID: Y77F-REPO-SZ-20261019-8FADAA66
-"""CLI: keygen (demo), sign, verify, check, cap. Simulation only.
+"""CLI: keygen (demo), keyid, sign, verify, check, cap. Simulation only.
 
 Exit codes: 0 ok | 1 map rejected (verify, check) | 2 bad input or refused action | 3 `cap` applied the
 FAIL-SAFE (the JSON line is still printed). Scripts must not treat 3 as success.
@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 from .loader import MapRejected, load_verified, read_limited, validate_schema
 from .rollback import RollbackGuard
-from .signing import generate_demo_keypair, sign_map
+from .signing import generate_demo_keypair, key_id, sign_map
 from .supervisor import SupervisorConfig, cap_from_envelope
 from .zones import check
 
@@ -60,9 +60,10 @@ def _when(a):
         return None, "--time must be ISO 8601 with a UTC offset"
     if when.tzinfo is None:
         return None, "--time needs a UTC offset"
-    if (getattr(a, "strict_clock", False) and a.time
+    if (not getattr(a, "simulation", False) and getattr(a, "time", None)
             and abs((when - datetime.now(timezone.utc)).total_seconds()) > STRICT_CLOCK_SKEW_S):
-        return None, f"--time is more than {int(STRICT_CLOCK_SKEW_S)} s from the system clock (--strict-clock)"
+        return None, (f"--time is more than {int(STRICT_CLOCK_SKEW_S)} s from the system clock "
+                      "(trusted clock; use --simulation for fixed simulation dates)")
     return when, None
 
 
@@ -74,9 +75,11 @@ def _build_parser() -> argparse.ArgumentParser:
         p.add_argument("signed")
         p.add_argument("--pub", required=True)
         p.add_argument("--time", help="ISO 8601 with offset; default now (simulation override)")
-        p.add_argument("--strict-clock", action="store_true",
-                       help="refuse a --time that is more than 300 s from the system clock")
+        p.add_argument("--simulation", action="store_true",
+                       help="simulation only: turn the trusted clock off so --time may be any date")
         p.add_argument("--state", help=state_help)
+        p.add_argument("--pin-key-id", help="pinned signing key ID (from `securezone keyid`), obtained out of band")
+        p.add_argument("--pin-sequence", type=int, help="pinned lowest acceptable map sequence, out of band")
         if lat_lon:
             p.add_argument("--lat", type=float, required=True)
             p.add_argument("--lon", type=float, required=True)
@@ -84,6 +87,8 @@ def _build_parser() -> argparse.ArgumentParser:
     k = sub.add_parser("keygen", help="DEMO ONLY keypair (never commit the private key)")
     k.add_argument("--out", default="demo_keys")
     k.add_argument("--force", action="store_true", help="overwrite existing demo keys")
+    ki = sub.add_parser("keyid", help="print the key ID of a public key (to pin out of band)")
+    ki.add_argument("pub")
     s = sub.add_parser("sign")
     s.add_argument("map")
     s.add_argument("--key", required=True)
@@ -98,6 +103,20 @@ def _build_parser() -> argparse.ArgumentParser:
     cp.add_argument("--known-area", type=float, nargs=4, metavar=("MIN_LON", "MIN_LAT", "MAX_LON", "MAX_LAT"),
                     help="area the map should cover; without it a missing map fails safe everywhere")
     return ap
+
+
+def _guard(a) -> RollbackGuard:
+    """Rollback guard from --state plus the out-of-band pins. ValueError if a fresh state has no pin."""
+    return RollbackGuard(a.state, pinned_key_id=a.pin_key_id, pinned_sequence=a.pin_sequence)
+
+
+def _keyid(a) -> int:
+    try:
+        print(key_id(_read(a.pub)))
+    except (OSError, MapRejected, ValueError, TypeError) as exc:
+        print(f"REFUSED: cannot read public key ({type(exc).__name__})", file=sys.stderr)
+        return EXIT_USAGE
+    return EXIT_OK
 
 
 def _keygen(a) -> int:
@@ -139,7 +158,7 @@ def _cap(a) -> int:
         return EXIT_USAGE
     try:
         cfg = SupervisorConfig(known_area=tuple(a.known_area) if a.known_area else None,
-                               max_clock_skew_s=STRICT_CLOCK_SKEW_S if a.strict_clock else None)
+                               max_clock_skew_s=STRICT_CLOCK_SKEW_S, simulation=a.simulation)
     except ValueError as exc:
         print(f"REJECTED: {exc}", file=sys.stderr)
         return EXIT_USAGE
@@ -154,8 +173,8 @@ def _cap(a) -> int:
     guard = None
     if a.state:
         try:
-            guard = RollbackGuard(a.state)
-        except MapRejected:
+            guard = _guard(a)
+        except (MapRejected, ValueError):
             envelope = None  # unreadable rollback state: fail closed
     d = cap_from_envelope(a.speed, lat=a.lat, lon=a.lon, when=when, envelope=envelope, pub_pem=pub,
                           config=cfg, guard=guard)
@@ -171,7 +190,7 @@ def _verify_or_check(a) -> int:
         print(f"REJECTED: {err}", file=sys.stderr)
         return EXIT_USAGE
     try:
-        guard = RollbackGuard(a.state) if a.state else None
+        guard = _guard(a) if a.state else None
         try:
             envelope = json.loads(read_limited(a.signed).decode("utf-8"))
         except (ValueError, RecursionError) as exc:
@@ -179,6 +198,9 @@ def _verify_or_check(a) -> int:
         payload = load_verified(envelope, _read(a.pub), now=when, guard=guard)
         if a.cmd == "verify" and guard is not None:
             guard.accept(payload)
+    except ValueError as exc:  # missing or bad pin
+        print(f"REJECTED: {exc}", file=sys.stderr)
+        return EXIT_USAGE
     except (MapRejected, OSError) as exc:
         print(f"REJECTED: {exc}", file=sys.stderr)
         return EXIT_REJECTED
@@ -197,6 +219,8 @@ def main(argv=None) -> int:
     a = _build_parser().parse_args(argv)
     if a.cmd == "keygen":
         return _keygen(a)
+    if a.cmd == "keyid":
+        return _keyid(a)
     if a.cmd == "sign":
         return _sign(a)
     if a.cmd == "cap":

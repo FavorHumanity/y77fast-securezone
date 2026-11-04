@@ -111,9 +111,9 @@ class SecureZoneTests(unittest.TestCase):
                 self.assertEqual(main(["sign", SAMPLE, "--key", os.path.join(d, "demo_private.pem"),
                                        "--out", signed]), 0)
                 pub = os.path.join(d, "demo_public.pem")
-                self.assertEqual(main(["verify", signed, "--pub", pub, "--time", NOW.isoformat()]), 0)
+                self.assertEqual(main(["verify", signed, "--pub", pub, "--time", NOW.isoformat(), "--simulation"]), 0)
                 self.assertEqual(main(["check", signed, "--pub", pub, "--lat", str(IN_LAT),
-                                       "--lon", str(IN_LON), "--time", NOW.isoformat()]), 0)
+                                       "--lon", str(IN_LON), "--time", NOW.isoformat(), "--simulation"]), 0)
             self.assertIn('"active": true', out.getvalue())
             with open(signed, encoding="utf-8") as fh:
                 env = json.load(fh)
@@ -121,7 +121,7 @@ class SecureZoneTests(unittest.TestCase):
             with open(signed, "w", encoding="utf-8") as fh:
                 json.dump(env, fh)
             with redirect_stderr(io.StringIO()):
-                self.assertEqual(main(["verify", signed, "--pub", pub, "--time", NOW.isoformat()]), 1)
+                self.assertEqual(main(["verify", signed, "--pub", pub, "--time", NOW.isoformat(), "--simulation"]), 1)
 
 
 if __name__ == "__main__":

@@ -57,7 +57,8 @@ class SupervisorConfig:
     known_area: tuple | None = None
     lookahead_margin_s: float = 10.0     # D1: extra seconds of notice before a zone's window opens
     max_plausible_speed_mps: float = 90.0  # GPS plausibility: faster implied movement is a position glitch
-    max_clock_skew_s: float | None = None  # trusted clock: None = simulation (no check); else max |when - wall|
+    max_clock_skew_s: float | None = 300.0  # trusted clock: max |when - wall| seconds (real use: always on)
+    simulation: bool = False  # explicit opt-out of the trusted clock for simulations/tests with fixed dates
 
     def __post_init__(self):
         # A bad config must be rejected loudly; it must never silently switch the fail-safe off.
@@ -71,6 +72,10 @@ class SupervisorConfig:
             raise ValueError("max_plausible_speed_mps must be finite and > 0")
         if self.max_clock_skew_s is not None and (not _ok(self.max_clock_skew_s) or self.max_clock_skew_s <= 0):
             raise ValueError("max_clock_skew_s must be None or finite and > 0")
+        if not isinstance(self.simulation, bool):
+            raise TypeError("simulation must be a bool")
+        if self.max_clock_skew_s is None and not self.simulation:
+            raise ValueError("trusted clock is required outside simulation (set simulation=True to opt out)")
         a = self.known_area
         if a is None:
             return
@@ -275,7 +280,7 @@ def cap_from_envelope(commanded_mph: float, *, lat: float, lon: float, when: dat
                       guard=None) -> CapDecision:
     """Verify the signed map, then cap. Any rejection triggers the fail-safe.
 
-    Trusted clock: if config.max_clock_skew_s is set, `when` must be within that many seconds of the
+    Trusted clock (on unless config.simulation is True): `when` must be within that many seconds of the
     machine's own clock (`wall_now`, default the system clock), otherwise fail-safe ("clock untrusted").
     A caller-supplied time can otherwise make an old map look fresh or a zone look inactive.
     `guard` is an optional RollbackGuard that rejects replayed (older) maps.
@@ -285,7 +290,7 @@ def cap_from_envelope(commanded_mph: float, *, lat: float, lon: float, when: dat
     try:
         if when.tzinfo is None:
             raise ValueError("naive datetime")
-        if config.max_clock_skew_s is not None:
+        if not config.simulation and config.max_clock_skew_s is not None:
             ref = wall_now or datetime.now(timezone.utc)
             if abs((when - ref).total_seconds()) > config.max_clock_skew_s:
                 fail_reason = "clock untrusted"

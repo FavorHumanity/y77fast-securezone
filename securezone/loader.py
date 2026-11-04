@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from .signing import verify_signature
+from .signing import matching_key_id
 
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -199,7 +199,8 @@ def load_verified(envelope: dict, pub_pem, now: datetime | None = None,
     pl = envelope["payload"]
     if isinstance(pl, dict) and isinstance(pl.get("features"), list) and len(pl["features"]) > MAX_ZONES:
         raise MapRejected(f"too many zones (max {MAX_ZONES})")  # cheap check before any hashing work
-    if not verify_signature(envelope, pub_pem):
+    kid = matching_key_id(envelope, pub_pem)
+    if kid is None:
         raise MapRejected("signature invalid (tampered or wrong key)")
     payload = envelope["payload"]
     validate_schema(payload)
@@ -213,7 +214,7 @@ def load_verified(envelope: dict, pub_pem, now: datetime | None = None,
     if now - issued > max_age:
         raise MapRejected("map is stale")
     if guard is not None:
-        guard.check(payload)
+        guard.check(payload, key_id=kid)
     return payload
 
 

@@ -54,7 +54,7 @@ See [`docs/ADAPTING_KNOWN_AREA.md`](docs/ADAPTING_KNOWN_AREA.md). Planning note 
 See [`docs/DESIGN_GAPS.md`](docs/DESIGN_GAPS.md) for what each fix does and what is still out of scope.
 In short: look-ahead before a zone opens, hard cap over comfort, signed-map rollback guard (`sequence`),
 no hard-coded area, geometry limits (no holes, no MultiPolygon, size limits), `lat=`/`lon=` keyword-only,
-distinct exit codes, domain-separated signatures, trusted-clock option, GPS plausibility check, input size
+distinct exit codes, domain-separated signatures, trusted clock on by default (`--simulation` opts out), pinned first key or sequence for the rollback guard, GPS plausibility check, input size
 limits, pinned CI and dependencies, key-file permission checks and a repository hygiene check.
 
 ## How to run
@@ -64,14 +64,15 @@ python -m securezone keygen --out demo_keys          # DEMO ONLY, git-ignored
 python -m securezone sign data/sample_zones.geojson --key demo_keys/demo_private.pem --out signed_zones.json
 python -m securezone verify signed_zones.json --pub demo_keys/demo_public.pem
 python -m securezone check signed_zones.json --pub demo_keys/demo_public.pem \
-    --lat 30.2610 --lon -97.7590 --time 2026-10-21T07:30:00-05:00
+    --lat 30.2610 --lon -97.7590 --time 2026-10-21T07:30:00-05:00 --simulation
 python -m securezone cap signed_zones.json --pub demo_keys/demo_public.pem --speed 35 \
-    --lat 30.2610 --lon -97.7590 --time 2026-10-21T07:30:00-05:00
-# optional: remember the newest map so an older signed map is refused (rollback guard)
-python -m securezone verify signed_zones.json --pub demo_keys/demo_public.pem --state zone_state.json
-# optional: refuse a --time that is far from the real clock
-python -m securezone cap signed_zones.json --pub demo_keys/demo_public.pem --speed 35 \
-    --lat 30.2610 --lon -97.7590 --strict-clock
+    --lat 30.2610 --lon -97.7590 --time 2026-10-21T07:30:00-05:00 --simulation
+# The trusted clock is ON by default: a --time more than 300 s from the system clock is refused.
+# --simulation is the explicit opt-out for fixed simulation dates (never for real use).
+# optional rollback guard: a fresh state file needs a key ID pinned out of band (no trust on first use)
+python -m securezone keyid demo_keys/demo_public.pem   # share this ID through a separate trusted channel
+python -m securezone verify signed_zones.json --pub demo_keys/demo_public.pem --state zone_state.json \
+    --pin-key-id <KEY_ID>
 echo $?   # 3 means the fail-safe was applied
 python scripts/simulate.py
 python scripts/check_hygiene.py

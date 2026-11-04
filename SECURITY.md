@@ -14,7 +14,7 @@ Email **favortaueva@gmail.com** with "SecureZone security" in the subject. Pleas
 - `securezone sign` refuses a private key that group or others can read. Keys are written with mode 600.
 
 ## Trust rules for map data
-A map is rejected if it is unsigned, tampered, signed by the wrong key, expired, stale (older than 30 days by default), issued in the future, fails schema or geometry limits (malformed times, limits, coordinates, holes, oversized zones), is larger than 1 MiB, or is older than the newest map a rollback guard has accepted (`metadata.sequence`). Any failure while loading a map, an invalid position, an impossible position jump or (with a trusted-clock setting) an untrusted time falls back to the lowest school limit instead of crashing or leaving speed uncapped.
+A map is rejected if it is unsigned, tampered, signed by the wrong key, expired, stale (older than 30 days by default), issued in the future, fails schema or geometry limits (malformed times, limits, coordinates, holes, oversized zones), is larger than 1 MiB, or is older than the newest map a rollback guard has accepted (`metadata.sequence`). Any failure while loading a map, an invalid position, an impossible position jump or an untrusted time (trusted clock is on unless simulation mode is chosen explicitly) falls back to the lowest school limit instead of crashing or leaving speed uncapped.
 
 ---
 <sub>© 2026 Favor Figota Taueva · Y77FAST SOFTWARE FOUNDATION Corp. · All rights reserved.</sub>

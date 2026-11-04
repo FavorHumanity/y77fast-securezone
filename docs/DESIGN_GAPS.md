@@ -17,7 +17,8 @@ A review found seven design gaps (D1–D7). Each now has a fix and a test. Run `
 ## D3. Replay and rollback of signed maps
 **Was:** an older signed map was accepted until it expired.
 **Now:** maps carry an integer `metadata.sequence`. `RollbackGuard` (and `--state FILE`) refuses a lower sequence, refuses the same sequence with different content, and fails closed on a damaged state file. A map may not be valid for more than 400 days. The loader accepts a list of public keys, so a key can be rotated.
-**Limit:** the first map a fresh guard sees is trusted. Pin the first sequence yourself if that matters.
+**Pinning (no trust on first use):** a fresh guard must be given a key ID (`securezone keyid`) or a lowest sequence obtained out of band (`pinned_key_id` / `pinned_sequence`, CLI `--pin-key-id` / `--pin-sequence`). Without a pin it refuses to start, and `cap` fails safe. A pinned key ID is checked on every map, also after the state file exists.
+**Limit:** distributing the pin safely is an operational step outside this code. No key revocation list (rotation is by key list only).
 
 ## D4. No hard-coded known area
 **Was:** the fail-safe was silently off outside the sample area.
@@ -36,7 +37,7 @@ A review found seven design gaps (D1–D7). Each now has a fix and a test. Run `
 
 ## Extra hardening
 - **Domain separation:** signatures cover a context tag plus the payload.
-- **Trusted clock:** `SupervisorConfig(max_clock_skew_s=…)` and `--strict-clock` refuse a time far from the machine clock.
+- **Trusted clock (on by default):** `SupervisorConfig` refuses a time more than 300 s from the machine clock; turning it off needs `simulation=True` (CLI `--simulation`), meant only for simulations and tests with fixed dates.
 - **GPS plausibility:** an impossible jump between two positions fails safe.
 - **Input limits:** files over 1 MiB, deep JSON and oversized maps are refused. `sign` refuses a map the loader would reject.
 - **CI pinning:** actions pinned to commit SHAs, exact dependency versions, a pinned scanner image.

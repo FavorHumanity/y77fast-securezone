@@ -3,6 +3,7 @@
 """Ed25519 signing and verification of zone-map payloads."""
 
 import base64
+import hashlib
 import json
 
 from cryptography.exceptions import InvalidSignature
@@ -66,19 +67,30 @@ def sign_map(payload: dict, priv_pem: bytes) -> dict:
     return {"alg": "Ed25519", "payload": payload, "signature": base64.b64encode(sig).decode()}
 
 
+def key_id(pub_pem: bytes) -> str:
+    """Stable ID of a public key: SHA-256 (hex) of its raw 32-byte Ed25519 key. Pin this out of band."""
+    raw = load_public(pub_pem).public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    return hashlib.sha256(raw).hexdigest()
+
+
 def verify_signature(envelope: dict, pub_pem) -> bool:
     """True if the signature matches. `pub_pem` is one PEM key, or a list/tuple of PEM keys (key rotation:
     any trusted key may match). Any error means False, never an exception."""
+    return matching_key_id(envelope, pub_pem) is not None
+
+
+def matching_key_id(envelope: dict, pub_pem) -> str | None:
+    """key_id of the trusted key whose signature matches, or None. Never raises."""
     keys = list(pub_pem) if isinstance(pub_pem, (list, tuple)) else [pub_pem]
     try:
         sig = base64.b64decode(envelope["signature"], validate=True)
         data = signing_input(envelope["payload"])
     except (KeyError, ValueError, TypeError, RecursionError):
-        return False
+        return None
     for pem in keys:
         try:
             load_public(pem).verify(sig, data)
-            return True
+            return key_id(pem)
         except (InvalidSignature, ValueError, TypeError):
             continue
-    return False
+    return None

@@ -12,7 +12,9 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from securezone.signing import generate_demo_keypair, sign_map
-from securezone.supervisor import M_PER_DEG_LAT, MPH_TO_MPS, cap_from_envelope
+from securezone.supervisor import M_PER_DEG_LAT, MPH_TO_MPS, SupervisorConfig, cap_from_envelope
+
+SIM_CONFIG = SupervisorConfig(simulation=True)  # fixed simulated dates: trusted clock explicitly off
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -46,7 +48,7 @@ def run(start: datetime, commanded_mph: float = 35.0, dt: float = 1.0, every: in
         if t >= max_steps:
             raise RuntimeError(f"simulation stopped after {max_steps} steps without reaching the end")
         d = cap_from_envelope(commanded_mph, lat=lat, lon=lon, when=when, envelope=env, pub_pem=pub,
-                              prev_speed_mph=speed, dt_s=dt)
+                              prev_speed_mph=speed, dt_s=dt, config=SIM_CONFIG)
         speed = d.speed_mph
         if t % every == 0 or d.reason != last_reason:
             rows.append((t, lat, lon, commanded_mph, speed, d.cap_mph, d.reason, d.zone_ids))

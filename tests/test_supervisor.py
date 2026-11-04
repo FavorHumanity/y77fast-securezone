@@ -24,6 +24,8 @@ from securezone.supervisor import (
     distance_to_zone_m,
 )
 
+SIM = SupervisorConfig(simulation=True)  # tests use fixed dates: trusted clock explicitly off
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SAMPLE = os.path.join(ROOT, "data", "sample_zones.geojson")
 CT = ZoneInfo("America/Chicago")
@@ -31,7 +33,7 @@ NOW = datetime(2026, 10, 21, 7, 30, tzinfo=CT)      # Wednesday, active
 NOON = datetime(2026, 10, 21, 12, 0, tzinfo=CT)     # Wednesday, inactive
 IN_LAT, IN_LON = 30.2610, -97.7590                  # inside SZ-DEMO-001 (20 mph)
 FAR_LAT, FAR_LON = 30.2300, -97.7900                # in known area, far from zones
-CFG = SupervisorConfig()
+CFG = SupervisorConfig(simulation=True)
 
 
 def sample():
@@ -62,35 +64,35 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(cap_speed(35, lat=IN_LAT, lon=IN_LON, when=sat, payload=self.payload).speed_mph, 35)
 
     def test_missing_map_fallback(self):
-        d = cap_from_envelope(35, lat=FAR_LAT, lon=FAR_LON, when=NOW, envelope=None, pub_pem=self.pub)
+        d = cap_from_envelope(35, lat=FAR_LAT, lon=FAR_LON, when=NOW, envelope=None, pub_pem=self.pub, config=SIM)
         self.assertEqual(d.speed_mph, 20)
         self.assertTrue(d.reason.startswith("FAIL-SAFE"))
 
     def test_tampered_map_fallback(self):
         bad = copy.deepcopy(self.env)
         bad["payload"]["features"][0]["properties"]["speed_limit_mph"] = 45
-        d = cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=bad, pub_pem=self.pub)
+        d = cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=bad, pub_pem=self.pub, config=SIM)
         self.assertEqual(d.speed_mph, 20)
         self.assertTrue(d.reason.startswith("FAIL-SAFE"))
 
     def test_wrong_key_and_expired_fallback(self):
         _, other_pub = generate_demo_keypair()
-        self.assertEqual(cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=self.env, pub_pem=other_pub).speed_mph, 20)
+        self.assertEqual(cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=self.env, pub_pem=other_pub, config=SIM).speed_mph, 20)
         late = datetime(2028, 1, 5, 7, 30, tzinfo=CT)
-        self.assertEqual(cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=late, envelope=self.env, pub_pem=self.pub).speed_mph, 20)
+        self.assertEqual(cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=late, envelope=self.env, pub_pem=self.pub, config=SIM).speed_mph, 20)
 
     def test_stale_map_fallback_even_at_noon(self):
         stale = datetime(2026, 12, 2, 12, 0, tzinfo=CT)  # > 30 days after issue
-        self.assertEqual(cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=stale, envelope=self.env, pub_pem=self.pub).speed_mph, 20)
+        self.assertEqual(cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=stale, envelope=self.env, pub_pem=self.pub, config=SIM).speed_mph, 20)
 
     def test_no_map_outside_known_area_not_capped(self):
         # D4: the known area is now explicit configuration (here: the fictional demo box), not a default.
-        cfg = SupervisorConfig(known_area=DEMO_KNOWN_AREA)
+        cfg = SupervisorConfig(known_area=DEMO_KNOWN_AREA, simulation=True)
         d = cap_from_envelope(35, lat=40.0, lon=-100.0, when=NOW, envelope=None, pub_pem=self.pub, config=cfg)
         self.assertEqual(d.speed_mph, 35)
 
     def test_valid_envelope_used(self):
-        self.assertEqual(cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=self.env, pub_pem=self.pub).speed_mph, 20)
+        self.assertEqual(cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=self.env, pub_pem=self.pub, config=SIM).speed_mph, 20)
 
     def test_never_increases_speed_random(self):
         rng = random.Random(77)
@@ -187,12 +189,12 @@ class SupervisorTests(unittest.TestCase):
             {"alg": "Ed25519", "signature": "AA==", "payload": [1]},
         ]
         for env in bad:
-            d = cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=env, pub_pem=self.pub)
+            d = cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=env, pub_pem=self.pub, config=SIM)
             self.assertEqual(d.speed_mph, 20)
             self.assertTrue(d.reason.startswith("FAIL-SAFE"))
 
     def test_naive_datetime_fails_safe(self):
-        d = cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=datetime(2026, 10, 21, 7, 30), envelope=self.env, pub_pem=self.pub)
+        d = cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=datetime(2026, 10, 21, 7, 30), envelope=self.env, pub_pem=self.pub, config=SIM)
         self.assertEqual(d.speed_mph, 20)
 
     def test_cli_bad_time_and_missing_pub(self):
@@ -206,7 +208,7 @@ class SupervisorTests(unittest.TestCase):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 rc = main(["cap", sp, "--pub", os.path.join(tmp, "missing.pem"), "--speed", "35",
-                           "--lat", str(IN_LAT), "--lon", str(IN_LON), "--time", NOW.isoformat()])
+                           "--lat", str(IN_LAT), "--lon", str(IN_LON), "--time", NOW.isoformat(), "--simulation"])
             self.assertEqual(rc, 3)  # D7: FAIL-SAFE applied -> distinct exit code
             self.assertEqual(json.loads(buf.getvalue())["speed_mph"], 20)
 
@@ -236,7 +238,7 @@ class SupervisorTests(unittest.TestCase):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 rc = main(["cap", sp, "--pub", pp, "--speed", "35", "--lat", str(IN_LAT),
-                           "--lon", str(IN_LON), "--time", NOW.isoformat()])
+                           "--lon", str(IN_LON), "--time", NOW.isoformat(), "--simulation"])
             self.assertEqual(rc, 0)
             self.assertEqual(json.loads(buf.getvalue())["speed_mph"], 20)
 

@@ -21,7 +21,7 @@ from securezone import loader
 from securezone.cli import main
 from securezone.loader import MapRejected, load_verified, read_limited, validate_schema
 from securezone.rollback import RollbackGuard
-from securezone.signing import DOMAIN, canonical, generate_demo_keypair, sign_map, signing_input
+from securezone.signing import DOMAIN, canonical, generate_demo_keypair, key_id, sign_map, signing_input
 from securezone.supervisor import (
     DEMO_KNOWN_AREA,
     MPH_TO_MPS,
@@ -34,6 +34,8 @@ from securezone.supervisor import (
     known_area_from_payload,
 )
 from securezone.zones import check, point_in_polygon, seconds_until_active
+
+SIM = SupervisorConfig(simulation=True)  # tests use fixed dates: trusted clock explicitly off
 
 ROOT = Path(__file__).resolve().parent.parent
 CT = ZoneInfo("America/Chicago")
@@ -90,7 +92,7 @@ class TestD4KnownArea(Base):
             self.assertIn("no known area configured", d.reason)
 
     def test_explicit_area_keeps_old_behaviour(self):
-        cfg = SupervisorConfig(known_area=DEMO_KNOWN_AREA)
+        cfg = SupervisorConfig(known_area=DEMO_KNOWN_AREA, simulation=True)
         self.assertEqual(cap_speed(35, lat=40.0, lon=-100.0, when=NOW, payload=None, config=cfg).speed_mph, 35)
         self.assertEqual(cap_speed(35, lat=IN_LAT, lon=IN_LON, when=NOW, payload=None, config=cfg).speed_mph, 20)
 
@@ -118,9 +120,9 @@ class TestD4KnownArea(Base):
         env = sign_map(pl, self.priv)
         apia_now = datetime(2026, 10, 21, 7, 30, tzinfo=ZoneInfo("Pacific/Apia"))
         lat, lon = IN_LAT + dlat, IN_LON + dlon
-        ok = cap_from_envelope(35, lat=lat, lon=lon, when=apia_now, envelope=env, pub_pem=self.pub)
+        ok = cap_from_envelope(35, lat=lat, lon=lon, when=apia_now, envelope=env, pub_pem=self.pub, config=SIM)
         self.assertEqual(ok.speed_mph, 20)
-        cfg = config_for_map(pl)
+        cfg = config_for_map(pl, SIM)
         bad = cap_from_envelope(35, lat=lat, lon=lon, when=apia_now, envelope=None, pub_pem=self.pub, config=cfg)
         self.assertEqual((bad.speed_mph, bad.fail_safe), (20, True))
         far = cap_from_envelope(35, lat=lat + 1.0, lon=lon, when=apia_now, envelope=None, pub_pem=self.pub,
@@ -142,7 +144,7 @@ class TestD4KnownArea(Base):
             pp = os.path.join(t, "p.pem")
             Path(pp).write_bytes(self.pub)
             base = ["cap", sp, "--pub", pp, "--speed", "35", "--lat", "40", "--lon", "-100",
-                    "--time", NOW.isoformat()]
+                    "--time", NOW.isoformat(), "--simulation"]
             rc, out, _ = run_cli(*base)
             self.assertEqual((rc, json.loads(out)["speed_mph"]), (3, 20))      # no area: fail safe
             rc, out, _ = run_cli(*base, "--known-area", "-97.8", "30.2", "-97.7", "30.3")
@@ -158,7 +160,7 @@ class TestD6KeywordOnly(Base):
         with self.assertRaises(TypeError):
             cap_speed(35, IN_LAT, IN_LON, NOW, self.payload)
         with self.assertRaises(TypeError):
-            cap_from_envelope(35, IN_LAT, IN_LON, NOW, self.env, self.pub)
+            cap_from_envelope(35, IN_LAT, IN_LON, NOW, self.env, self.pub, config=SIM)
         with self.assertRaises(TypeError):
             point_in_polygon(ring, IN_LON, IN_LAT)
         with self.assertRaises(TypeError):
@@ -190,7 +192,7 @@ class TestD6KeywordOnly(Base):
             sp, pp = os.path.join(t, "s.json"), os.path.join(t, "p.pem")
             Path(sp).write_text(json.dumps(self.env), encoding="utf-8")
             Path(pp).write_bytes(self.pub)
-            rc, _, _ = run_cli("check", sp, "--pub", pp, "--lat", "nan", "--lon", "-97.7", "--time", NOW.isoformat())
+            rc, _, _ = run_cli("check", sp, "--pub", pp, "--lat", "nan", "--lon", "-97.7", "--time", NOW.isoformat(), "--simulation")
             self.assertEqual(rc, 2)
 
 
@@ -206,7 +208,7 @@ class TestD7ExitCodeAndLoop(Base):
         with tempfile.TemporaryDirectory() as t:
             sp, pp = self._files(t)
             args = ["cap", sp, "--pub", pp, "--speed", "35", "--lat", str(IN_LAT), "--lon", str(IN_LON),
-                    "--time", NOW.isoformat()]
+                    "--time", NOW.isoformat(), "--simulation"]
             rc, out, _ = run_cli(*args)
             self.assertEqual((rc, json.loads(out)["fail_safe"]), (0, False))
             # tampered map -> fail-safe -> exit 3, JSON still printed
@@ -216,7 +218,7 @@ class TestD7ExitCodeAndLoop(Base):
             rc, out, _ = run_cli(*args)
             info = json.loads(out)
             self.assertEqual((rc, info["fail_safe"], info["speed_mph"]), (3, True, 20))
-            rc, _, _ = run_cli(*args[:-1], "garbage")
+            rc, _, _ = run_cli(*args[:-2], "garbage")
             self.assertEqual(rc, 2)
 
     def _sim(self):
@@ -391,10 +393,10 @@ class TestD3Rollback(Base):
         return sign_map(p, self.priv)
 
     def test_guard_memory(self):
-        g = RollbackGuard()
+        g = RollbackGuard(pinned_key_id=key_id(self.pub))
         e2 = self.env_seq(2)
-        g.accept(load_verified(e2, self.pub, now=NOW))
-        g.accept(load_verified(e2, self.pub, now=NOW))              # same map again is fine
+        g.accept(load_verified(e2, self.pub, now=NOW, guard=g))
+        g.accept(load_verified(e2, self.pub, now=NOW, guard=g))              # same map again is fine
         with self.assertRaisesRegex(MapRejected, "rollback"):
             load_verified(self.env_seq(1), self.pub, now=NOW, guard=g)
         g.accept(load_verified(self.env_seq(3), self.pub, now=NOW, guard=g))
@@ -402,14 +404,14 @@ class TestD3Rollback(Base):
             load_verified(e2, self.pub, now=NOW, guard=g)
 
     def test_fork_same_sequence_different_content(self):
-        g = RollbackGuard()
-        g.accept(load_verified(self.env_seq(5), self.pub, now=NOW))
+        g = RollbackGuard(pinned_key_id=key_id(self.pub))
+        g.accept(load_verified(self.env_seq(5), self.pub, now=NOW, guard=g))
         other = self.env_seq(5, map_version="forked")
         with self.assertRaisesRegex(MapRejected, "fork"):
             load_verified(other, self.pub, now=NOW, guard=g)
 
     def test_missing_sequence_rejected_when_guard_active(self):
-        g = RollbackGuard()
+        g = RollbackGuard(pinned_key_id=key_id(self.pub))
         no_seq = sample()
         del no_seq["metadata"]["sequence"]
         with self.assertRaisesRegex(MapRejected, "sequence"):
@@ -425,7 +427,7 @@ class TestD3Rollback(Base):
     def test_state_file_persists_and_is_private(self):
         with tempfile.TemporaryDirectory() as t:
             path = os.path.join(t, "state.json")
-            RollbackGuard(path).accept(load_verified(self.env_seq(4), self.pub, now=NOW))
+            RollbackGuard(path, pinned_sequence=1).accept(load_verified(self.env_seq(4), self.pub, now=NOW))
             if os.name == "posix":
                 self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
             g2 = RollbackGuard(path)
@@ -442,13 +444,13 @@ class TestD3Rollback(Base):
                     RollbackGuard(path)
 
     def test_supervisor_fails_safe_on_replay(self):
-        g = RollbackGuard()
-        g.accept(load_verified(self.env_seq(9), self.pub, now=NOW))
+        g = RollbackGuard(pinned_key_id=key_id(self.pub))
+        g.accept(load_verified(self.env_seq(9), self.pub, now=NOW, guard=g))
         old = self.env_seq(8)
-        d = cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=old, pub_pem=self.pub, guard=g)
+        d = cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=old, pub_pem=self.pub, guard=g, config=SIM)
         self.assertTrue(d.fail_safe)
         d = cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=self.env_seq(9), pub_pem=self.pub,
-                              guard=g)
+                              guard=g, config=SIM)
         self.assertFalse(d.fail_safe)
 
     def test_validity_period_limits(self):
@@ -465,7 +467,7 @@ class TestD3Rollback(Base):
             new, old = os.path.join(t, "new.json"), os.path.join(t, "old.json")
             Path(new).write_text(json.dumps(self.env_seq(3)), encoding="utf-8")
             Path(old).write_text(json.dumps(self.env_seq(2)), encoding="utf-8")
-            t_arg = ["--time", NOW.isoformat(), "--state", st]
+            t_arg = ["--time", NOW.isoformat(), "--simulation", "--state", st, "--pin-key-id", key_id(self.pub)]
             self.assertEqual(run_cli("check", old, "--pub", pp, "--lat", "30.261", "--lon", "-97.759", *t_arg)[0], 0)
             self.assertFalse(os.path.exists(st))                         # check/cap never write state
             self.assertEqual(run_cli("verify", new, "--pub", pp, *t_arg)[0], 0)
@@ -544,7 +546,7 @@ class TestD5GeometryLimits(Base):
 
     def test_loader_signed_but_bad_geometry_fails_safe(self):
         bad = sign_map(one_zone(ring=sq(-97.9, 30.0, 0.6)), self.priv)
-        d = cap_from_envelope(35, lat=30.3, lon=-97.6, when=NOW, envelope=bad, pub_pem=self.pub)
+        d = cap_from_envelope(35, lat=30.3, lon=-97.6, when=NOW, envelope=bad, pub_pem=self.pub, config=SIM)
         self.assertTrue(d.fail_safe)
 
 
@@ -593,23 +595,41 @@ class TestTrustedClock(Base):
                               wall_now=NOW + timedelta(hours=1))
         self.assertTrue(d.fail_safe)
 
-    def test_default_is_simulation_mode(self):
-        self.assertIsNone(SupervisorConfig().max_clock_skew_s)
+    def test_default_is_trusted_clock(self):
+        self.assertEqual(SupervisorConfig().max_clock_skew_s, 300.0)
+        self.assertFalse(SupervisorConfig().simulation)
+        with self.assertRaisesRegex(ValueError, "trusted clock"):
+            SupervisorConfig(max_clock_skew_s=None)              # real use cannot switch the clock off
+        SupervisorConfig(max_clock_skew_s=None, simulation=True)  # simulation may
         for bad in (0, -1, float("nan"), True):
             with self.assertRaises(ValueError):
                 SupervisorConfig(max_clock_skew_s=bad)
+        with self.assertRaises(TypeError):
+            SupervisorConfig(simulation="yes")
 
-    def test_cli_strict_clock(self):
+    def test_default_config_fails_safe_on_old_fixed_time(self):
+        # no config given: real-use default, so a fixed 2026-10-21 time far from the wall clock fails safe
+        d = cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=self.env, pub_pem=self.pub,
+                              wall_now=NOW + timedelta(days=30))
+        self.assertTrue(d.fail_safe)
+        self.assertIn("clock untrusted", d.reason)
+        d = cap_from_envelope(35, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=self.env, pub_pem=self.pub,
+                              wall_now=NOW + timedelta(days=30), config=SIM)
+        self.assertNotIn("clock untrusted", d.reason)
+
+    def test_cli_trusted_clock_default_and_simulation_flag(self):
         with tempfile.TemporaryDirectory() as t:
             sp, pp = os.path.join(t, "s.json"), os.path.join(t, "p.pem")
             Path(sp).write_text(json.dumps(self.env), encoding="utf-8")
             Path(pp).write_bytes(self.pub)
-            base = ["cap", sp, "--pub", pp, "--speed", "35", "--lat", "30.261", "--lon", "-97.759", "--strict-clock"]
-            rc, _, err = run_cli(*base, "--time", NOW.isoformat())     # 2026-10-21, far from today's clock
+            base = ["cap", sp, "--pub", pp, "--speed", "35", "--lat", "30.261", "--lon", "-97.759"]
+            rc, _, err = run_cli(*base, "--time", NOW.isoformat())     # far from the wall clock: refused
             self.assertEqual(rc, 2)
-            self.assertIn("strict-clock", err)
-            rc, _, _ = run_cli("verify", sp, "--pub", pp, "--strict-clock", "--time", NOW.isoformat())
+            self.assertIn("trusted clock", err)
+            rc, _, _ = run_cli("verify", sp, "--pub", pp, "--time", NOW.isoformat())
             self.assertEqual(rc, 2)
+            rc, _, _ = run_cli("verify", sp, "--pub", pp, "--time", NOW.isoformat(), "--simulation")
+            self.assertEqual(rc, 0)
             # no --time: the real system clock is used, so no refusal on clock grounds (map may be stale: exit 3)
             rc, _, _ = run_cli(*base)
             self.assertIn(rc, (0, 3))
@@ -630,7 +650,7 @@ class TestGpsPlausibility(Base):
         self.assertEqual(d.reason, "in active zone")
 
     def test_teleport_fails_safe_even_with_no_map_outside_area(self):
-        cfg = SupervisorConfig(known_area=DEMO_KNOWN_AREA)
+        cfg = SupervisorConfig(known_area=DEMO_KNOWN_AREA, simulation=True)
         d = cap_speed(35, lat=40.0, lon=-100.0, when=NOW, payload=None, config=cfg,
                       prev_position=Position(lat=41.0, lon=-100.0))
         self.assertTrue(d.fail_safe)
@@ -673,7 +693,7 @@ class TestInputSizeLimits(Base):
             Path(big).write_text('{"pad": "' + "a" * (loader.MAX_FILE_BYTES + 10) + '"}', encoding="utf-8")
             Path(pp).write_bytes(self.pub)
             rc, out, _ = run_cli("cap", big, "--pub", pp, "--speed", "35", "--lat", "30.261", "--lon", "-97.759",
-                                 "--time", NOW.isoformat())
+                                 "--time", NOW.isoformat(), "--simulation")
             self.assertEqual((rc, json.loads(out)["speed_mph"]), (3, 20))
             rc, _, _ = run_cli("keygen", "--out", os.path.join(t, "k"))
             self.assertEqual(rc, 0)
@@ -686,7 +706,7 @@ class TestInputSizeLimits(Base):
             ok = os.path.join(t, "ok.json")
             Path(ok).write_text(json.dumps(self.env), encoding="utf-8")
             rc, _, _ = run_cli("cap", ok, "--pub", pp, "--speed", "35", "--lat", "30.261", "--lon", "-97.759",
-                               "--time", NOW.isoformat())
+                               "--time", NOW.isoformat(), "--simulation")
             self.assertEqual(rc, 3)
 
     def test_deeply_nested_json_fails_safe(self):
@@ -695,7 +715,7 @@ class TestInputSizeLimits(Base):
             Path(deep).write_text("[" * 100_000 + "]" * 100_000, encoding="utf-8")
             Path(pp).write_bytes(self.pub)
             rc, _, _ = run_cli("cap", deep, "--pub", pp, "--speed", "35", "--lat", "30.261", "--lon", "-97.759",
-                               "--time", NOW.isoformat())
+                               "--time", NOW.isoformat(), "--simulation")
             self.assertEqual(rc, 3)
 
     def test_too_many_zones_rejected_before_verification(self):
@@ -833,9 +853,93 @@ class TestFuzzSignedGarbage(Base):
             except ValueError:
                 continue
             cmd = rng.uniform(0, 80)
-            d = cap_from_envelope(cmd, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=env, pub_pem=self.pub)
+            d = cap_from_envelope(cmd, lat=IN_LAT, lon=IN_LON, when=NOW, envelope=env, pub_pem=self.pub, config=SIM)
             self.assertLessEqual(d.speed_mph, cmd + 1e-9)
             self.assertGreaterEqual(d.speed_mph, 0)
+
+
+
+# ---------------------------------------------------------------- D3 pinning (no trust on first use)
+class TestPinnedTrust(Base):
+    def env_seq(self, seq, priv=None):
+        p = sample()
+        p["metadata"]["sequence"] = seq
+        return sign_map(p, priv or self.priv)
+
+    def test_fresh_guard_requires_pin(self):
+        with self.assertRaisesRegex(ValueError, "no trust on first use"):
+            RollbackGuard()
+        with tempfile.TemporaryDirectory() as t, self.assertRaises(ValueError):
+            RollbackGuard(os.path.join(t, "missing_state.json"))
+
+    def test_bad_pin_values(self):
+        for bad in ("abc", "G" * 64, "A" * 64, 123):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                RollbackGuard(pinned_key_id=bad)
+        for bad in (0, -3, True, "5", 1.5):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                RollbackGuard(pinned_sequence=bad)
+
+    def test_key_id_stable_and_distinct(self):
+        _, other = generate_demo_keypair()
+        self.assertEqual(key_id(self.pub), key_id(self.pub))
+        self.assertEqual(len(key_id(self.pub)), 64)
+        self.assertNotEqual(key_id(self.pub), key_id(other))
+
+    def test_pinned_key_rejects_other_trusted_key(self):
+        other_priv, other_pub = generate_demo_keypair()
+        g = RollbackGuard(pinned_key_id=key_id(self.pub))
+        # the other key is in the trusted list, but it is not the pinned one
+        with self.assertRaisesRegex(MapRejected, "pinned key"):
+            load_verified(self.env_seq(1, other_priv), [self.pub, other_pub], now=NOW, guard=g)
+        g.accept(load_verified(self.env_seq(1), [self.pub, other_pub], now=NOW, guard=g))
+        self.assertEqual(g.sequence, 1)
+
+    def test_accept_without_check_and_key_fails_closed(self):
+        g = RollbackGuard(pinned_key_id=key_id(self.pub))
+        with self.assertRaisesRegex(MapRejected, "pinned key"):
+            g.accept(self.env_seq(1)["payload"])   # never verified through load_verified: unknown key
+
+    def test_pinned_sequence_floor(self):
+        g = RollbackGuard(pinned_sequence=5)
+        with self.assertRaisesRegex(MapRejected, "pinned"):
+            load_verified(self.env_seq(4), self.pub, now=NOW, guard=g)
+        g.accept(load_verified(self.env_seq(5), self.pub, now=NOW, guard=g))
+        g.accept(load_verified(self.env_seq(7), self.pub, now=NOW, guard=g))
+        with self.assertRaisesRegex(MapRejected, "rollback"):
+            load_verified(self.env_seq(6), self.pub, now=NOW, guard=g)
+
+    def test_pinned_key_still_enforced_after_state_exists(self):
+        other_priv, other_pub = generate_demo_keypair()
+        with tempfile.TemporaryDirectory() as t:
+            path = os.path.join(t, "state.json")
+            g0 = RollbackGuard(path, pinned_key_id=key_id(self.pub))
+            g0.accept(load_verified(self.env_seq(2), self.pub, now=NOW, guard=g0))
+            g = RollbackGuard(path, pinned_key_id=key_id(self.pub))
+            with self.assertRaises(MapRejected):
+                load_verified(self.env_seq(3, other_priv), [other_pub], now=NOW, guard=g)
+
+    def test_cli_requires_pin_for_fresh_state(self):
+        with tempfile.TemporaryDirectory() as t:
+            sp, pp, st = os.path.join(t, "s.json"), os.path.join(t, "p.pem"), os.path.join(t, "st.json")
+            Path(sp).write_text(json.dumps(self.env_seq(3)), encoding="utf-8")
+            Path(pp).write_bytes(self.pub)
+            common = ["--time", NOW.isoformat(), "--simulation", "--state", st]
+            rc, _, err = run_cli("verify", sp, "--pub", pp, *common)
+            self.assertEqual(rc, 2)
+            self.assertIn("no trust on first use", err)
+            self.assertFalse(os.path.exists(st))
+            rc, out, _ = run_cli("cap", sp, "--pub", pp, "--speed", "35", "--lat", "30.261", "--lon", "-97.759",
+                                 *common)
+            self.assertEqual((rc, json.loads(out)["fail_safe"]), (3, True))   # no pin: fail closed
+            rc, kid, _ = run_cli("keyid", pp)
+            self.assertEqual((rc, kid.strip()), (0, key_id(self.pub)))
+            self.assertEqual(run_cli("verify", sp, "--pub", pp, *common, "--pin-key-id", kid.strip())[0], 0)
+            self.assertEqual(run_cli("verify", sp, "--pub", pp, *common)[0], 0)     # state exists now
+            rc, _, _ = run_cli("verify", sp, "--pub", pp, *common, "--pin-key-id", "0" * 64)
+            self.assertEqual(rc, 1)
+            rc, _, _ = run_cli("verify", sp, "--pub", pp, *common, "--pin-sequence", "9")
+            self.assertEqual(rc, 1)
 
 
 if __name__ == "__main__":
